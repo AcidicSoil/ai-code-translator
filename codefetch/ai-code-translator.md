@@ -42,24 +42,26 @@ import { CodeBlock } from '@/components/CodeBlock';
 import { LanguageSelect } from '@/components/LanguageSelect';
 import { ModelSelect } from '@/components/ModelSelect';
 import { TextBlock } from '@/components/TextBlock';
-import { OpenAIModel, TranslateBody } from '@/types/types';
+import { TranslateBody } from '@/types/types';
 import Head from 'next/head';
 import { useEffect, useState } from 'react';
+import { getModelConfig } from '@/types/model';
+import type { ModelId } from '@/types/model';
 
 export default function Home() {
   const [inputLanguage, setInputLanguage] = useState<string>('JavaScript');
   const [outputLanguage, setOutputLanguage] = useState<string>('Python');
   const [inputCode, setInputCode] = useState<string>('');
   const [outputCode, setOutputCode] = useState<string>('');
-  const [model, setModel] = useState<OpenAIModel>('gpt-3.5-turbo');
+  const [model, setModel] = useState<ModelId>('lmstudio-community/Meta-Llama-3-8B-Instruct-GGUF');
   const [loading, setLoading] = useState<boolean>(false);
   const [hasTranslated, setHasTranslated] = useState<boolean>(false);
   const [apiKey, setApiKey] = useState<string>('');
 
   const handleTranslate = async () => {
-    const maxCodeLength = model === 'gpt-3.5-turbo' ? 6000 : 12000;
+    const { provider, maxCodeLength } = getModelConfig(model);
 
-    if (!apiKey) {
+    if (!apiKey && provider !== 'lmstudio') {
       alert('Please enter an API key.');
       return;
     }
@@ -91,6 +93,7 @@ export default function Home() {
       outputLanguage,
       inputCode,
       model,
+      provider,
       apiKey,
     };
 
@@ -266,8 +269,9 @@ export default function Home() {
 
 pages/api/translate.ts
 ```
+// pages/api/translate.ts
 import { TranslateBody } from '@/types/types';
-import { OpenAIStream } from '@/utils';
+import { streamCodeTranslation } from '@/utils/providers';
 
 export const config = {
   runtime: 'edge',
@@ -275,16 +279,23 @@ export const config = {
 
 const handler = async (req: Request): Promise<Response> => {
   try {
-    const { inputLanguage, outputLanguage, inputCode, model, apiKey } =
-      (await req.json()) as TranslateBody;
-
-    const stream = await OpenAIStream(
+    const {
       inputLanguage,
       outputLanguage,
       inputCode,
       model,
+      provider,
       apiKey,
-    );
+    } = (await req.json()) as TranslateBody;
+
+    const stream = await streamCodeTranslation({
+      inputLanguage,
+      outputLanguage,
+      inputCode,
+      model,
+      provider,
+      apiKey,
+    });
 
     return new Response(stream);
   } catch (error) {
@@ -298,20 +309,26 @@ export default handler;
 
 components/APIKeyInput.tsx
 ```
+import { Icon2fa } from '@tabler/icons-react';
+import { FC } from 'react';
+
 interface Props {
   apiKey: string;
   onChange: (apiKey: string) => void;
 }
 
-export const APIKeyInput: React.FC<Props> = ({ apiKey, onChange }) => {
+export const APIKeyInput: FC<Props> = ({ apiKey, onChange }) => {
   return (
-    <input
-      className="mt-1 h-[24px] w-[280px] rounded-md border border-gray-300 px-3 py-2 text-black shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
-      type="password"
-      placeholder="OpenAI API Key"
-      value={apiKey}
-      onChange={(e) => onChange(e.target.value)}
-    />
+    <div className="relative">
+      <Icon2fa className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+      <input
+        className="w-full rounded-lg border border-neutral-600 bg-[#15161A] py-2 pl-10 pr-12 text-neutral-200 focus:border-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400"
+        type="password"
+        value={apiKey}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="API Key"
+      />
+    </div>
   );
 };
 ```
@@ -453,27 +470,31 @@ const languages = [
 
 components/ModelSelect.tsx
 ```
-import { OpenAIModel } from '@/types/types';
+// components/ModelSelect.tsx
 import { FC } from 'react';
+import { MODELS, ModelId, getModelConfig } from '@/types/model';
 
 interface Props {
-  model: OpenAIModel;
-  onChange: (model: OpenAIModel) => void;
+  model: ModelId;
+  onChange: (model: ModelId) => void;
 }
 
 export const ModelSelect: FC<Props> = ({ model, onChange }) => {
   const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    onChange(e.target.value as OpenAIModel);
+    onChange(e.target.value as ModelId);
   };
 
   return (
     <select
-      className="h-[40px] w-[140px] rounded-md bg-[#1F2937] px-4 py-2 text-neutral-200"
+      className="h-[40px] w-[220px] rounded-md bg-[#1F2937] px-4 py-2 text-neutral-200"
       value={model}
       onChange={handleChange}
     >
-      <option value="gpt-3.5-turbo">GPT-3.5</option>
-      <option value="gpt-4">GPT-4</option>
+      {MODELS.map((m) => (
+        <option key={m.id} value={m.id}>
+          {m.label} ({m.provider})
+        </option>
+      ))}
     </select>
   );
 };
@@ -504,16 +525,61 @@ export const TextBlock: React.FC<Props> = ({
 };
 ```
 
+types/model.ts
+```
+// types/model.ts (new file)
+import { ProviderId } from './provider';
+
+export type ModelId = string;
+
+export interface ModelConfig {
+  id: ModelId;
+  label: string;
+  provider: ProviderId;
+  maxCodeLength: number;
+}
+
+export const MODELS: ModelConfig[] = [
+  {
+    id: 'lmstudio-community/Meta-Llama-3-8B-Instruct-GGUF',
+    label: 'Llama 3 8B',
+    provider: 'lmstudio',
+    maxCodeLength: 8000,
+  },
+  {
+    id: 'lmstudio-community/gemma-2-9b-it-GGUF',
+    label: 'Gemma 2 9B',
+    provider: 'lmstudio',
+    maxCodeLength: 8000,
+  },
+];
+
+export const getModelConfig = (id: ModelId): ModelConfig => {
+  const model = MODELS.find((m) => m.id === id);
+  if (!model) throw new Error(`Unknown model: ${id}`);
+  return model;
+};
+```
+
+types/provider.ts
+```
+// types/provider.ts (new file)
+export type ProviderId = 'lmstudio' | string;
+```
+
 types/types.ts
 ```
-export type OpenAIModel = 'gpt-3.5-turbo' | 'gpt-4';
+// types/types.ts
+import type { ProviderId } from './provider';
+import type { ModelId } from './model';
 
 export interface TranslateBody {
   inputLanguage: string;
   outputLanguage: string;
   inputCode: string;
-  model: OpenAIModel;
-  apiKey: string;
+  model: ModelId;
+  provider: ProviderId;
+  apiKey: string; // you can keep one per provider or expand later
 }
 
 export interface TranslateResponse {
@@ -523,94 +589,212 @@ export interface TranslateResponse {
 
 utils/index.ts
 ```
+```
+
+utils/providers/base.ts
+```
+// utils/providers/base.ts (new file)
+import type { ReadableStream } from 'web-streams-polyfill/ponyfill';
+
+export interface ProviderRequest {
+  inputLanguage: string;
+  outputLanguage: string;
+  inputCode: string;
+  model: string;        // concrete provider model id
+  apiKey?: string;      // optional user key, else env
+}
+
+export interface Provider {
+  id: string;
+  streamTranslate: (req: ProviderRequest) => Promise<ReadableStream<Uint8Array>>;
+}
+
+// Simple registry
+const providers = new Map<string, Provider>();
+
+export const registerProvider = (provider: Provider) => {
+  providers.set(provider.id, provider);
+};
+
+export const getProvider = (id: string): Provider => {
+  const provider = providers.get(id);
+  if (!provider) throw new Error(`Unknown provider: ${id}`);
+  return provider;
+};
+```
+
+utils/providers/index.ts
+```
+// utils/providers/index.ts (new file)
+import { registerProvider, getProvider } from './base';
+import { LMStudioProvider } from './lmstudio';
+import { getModelConfig } from '@/types/model';
+
+registerProvider(LMStudioProvider);
+
+export const streamCodeTranslation = async (args: {
+  inputLanguage: string;
+  outputLanguage: string;
+  inputCode: string;
+  model: string;
+  provider: string;
+  apiKey?: string;
+}) => {
+  const provider = getProvider(args.provider);
+  const modelConfig = getModelConfig(args.model);
+
+  // sanity: enforced provider from model config
+  if (modelConfig.provider !== args.provider) {
+    throw new Error(
+      `Model ${modelConfig.id} does not belong to provider ${args.provider}`,
+    );
+  }
+
+  return provider.streamTranslate({
+    inputLanguage: args.inputLanguage,
+    outputLanguage: args.outputLanguage,
+    inputCode: args.inputCode,
+    model: modelConfig.id,
+    apiKey: args.apiKey,
+  });
+};
+```
+
+utils/providers/lmstudio.ts
+```
+// utils/providers/lmstudio.ts
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+import { streamText } from 'ai';
+import { Provider, ProviderRequest } from './base';
 import endent from 'endent';
-import {
-  createParser,
-  ParsedEvent,
-  ReconnectInterval,
-} from 'eventsource-parser';
 
 const createPrompt = (
   inputLanguage: string,
   outputLanguage: string,
   inputCode: string,
 ) => {
-  if (inputLanguage === 'Natural Language') {
+    if (inputLanguage === 'Natural Language') {
     return endent`
-    You are an expert programmer in all programming languages. Translate the natural language to "${outputLanguage}" code. Do not include \`\`\`.
+    You are an expert programmer in all programming languages. Translate the natural language to "${outputLanguage}" code. Do not include
 
-    Example translating from natural language to JavaScript:
+Example translating from natural language to JavaScript:
 
-    Natural language:
-    Print the numbers 0 to 9.
+Natural language:
+Print the numbers 0 to 9.
 
-    JavaScript code:
-    for (let i = 0; i < 10; i++) {
+JavaScript code:
+for (let i = 0; i < 10; i++) {
       console.log(i);
     }
 
-    Natural language:
+Natural language:
+${inputCode}
+
+${outputLanguage} code (no ):
+    `;
+} else if (outputLanguage === 'Natural Language') {
+    return endent`
+    You are an expert programmer in all programming languages. Translate the "${inputLanguage}" code to natural language in plain English that the average adult could understand. Respond as bullet points starting with -.
+
+Example translating from JavaScript to natural language:
+
+JavaScript code:
+for (let i = 0; i < 10; i++) {
+        console.log(i);
+    }
+
+Natural language:
+Print the numbers 0 to 9.
+
+    ${inputLanguage} code:
     ${inputCode}
 
-    ${outputLanguage} code (no \`\`\`):
+    Natural language:
     `;
-  } else if (outputLanguage === 'Natural Language') {
+} else {
     return endent`
-      You are an expert programmer in all programming languages. Translate the "${inputLanguage}" code to natural language in plain English that the average adult could understand. Respond as bullet points starting with -.
-  
-      Example translating from JavaScript to natural language:
-  
-      JavaScript code:
-      for (let i = 0; i < 10; i++) {
-        console.log(i);
-      }
-  
-      Natural language:
-      Print the numbers 0 to 9.
-      
-      ${inputLanguage} code:
-      ${inputCode}
+    You are an expert programmer in all programming languages. Translate the "${inputLanguage}" code to "${outputLanguage}" code. Do not include
 
-      Natural language:
-     `;
-  } else {
-    return endent`
-      You are an expert programmer in all programming languages. Translate the "${inputLanguage}" code to "${outputLanguage}" code. Do not include \`\`\`.
-  
-      Example translating from JavaScript to Python:
-  
-      JavaScript code:
-      for (let i = 0; i < 10; i++) {
+Example translating from JavaScript to Python:
+
+JavaScript code:
+for (let i = 0; i < 10; i++) {
         console.log(i);
-      }
-  
-      Python code:
-      for i in range(10):
+    }
+
+Python code:
+for i in range(10):
         print(i)
-      
-      ${inputLanguage} code:
-      ${inputCode}
 
-      ${outputLanguage} code (no \`\`\`):
-     `;
-  }
+    ${inputLanguage} code:
+    ${inputCode}
+
+    ${outputLanguage} code (no ):
+    `;
+}
 };
 
-export const OpenAIStream = async (
+const lmstudio = createOpenAICompatible({
+    name: 'lm-studio',
+    baseURL: 'http://localhost:1234/v1',
+});
+
+const streamTranslate: Provider['streamTranslate'] = async ({
+    inputLanguage,
+    outputLanguage,
+    inputCode,
+    model,
+}) => {
+    const prompt = createPrompt(inputLanguage, outputLanguage, inputCode);
+
+    const result = await streamText({
+        model: lmstudio(model),
+        system: prompt,
+        messages: [],
+    });
+
+    return result.toReadableStream();
+};
+
+export const LMStudioProvider: Provider = {
+    id: 'lmstudio',
+    streamTranslate,
+};
+```
+
+utils/providers/openai.ts
+```
+// utils/providers/openai.ts
+import endent from 'endent';
+import {
+  createParser,
+  ParsedEvent,
+  ReconnectInterval,
+} from 'eventsource-parser';
+import { Provider, ProviderRequest } from './base';
+
+const createPrompt = (
   inputLanguage: string,
   outputLanguage: string,
   inputCode: string,
-  model: string,
-  key: string,
 ) => {
-  const prompt = createPrompt(inputLanguage, outputLanguage, inputCode);
+  // move existing createPrompt here unchanged
+};
 
+const streamTranslate: Provider['streamTranslate'] = async ({
+  inputLanguage,
+  outputLanguage,
+  inputCode,
+  model,
+  apiKey,
+}) => {
+  const prompt = createPrompt(inputLanguage, outputLanguage, inputCode);
   const system = { role: 'system', content: prompt };
 
-  const res = await fetch(`https://api.openai.com/v1/chat/completions`, {
+  const res = await fetch('http://127.0.0.1:1234/v1/chat/completions', {
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${key || process.env.OPENAI_API_KEY}`,
+      Authorization: `Bearer ${apiKey || process.env.OPENAI_API_KEY}`,
     },
     method: 'POST',
     body: JSON.stringify({
@@ -634,20 +818,19 @@ export const OpenAIStream = async (
     );
   }
 
-  const stream = new ReadableStream({
+  const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const onParse = (event: ParsedEvent | ReconnectInterval) => {
         if (event.type === 'event') {
           const data = event.data;
-
           if (data === '[DONE]') {
             controller.close();
             return;
           }
-
           try {
             const json = JSON.parse(data);
-            const text = json.choices[0].delta.content;
+            const text = json.choices[0]?.delta?.content || '';
+            if (!text) return;
             const queue = encoder.encode(text);
             controller.enqueue(queue);
           } catch (e) {
@@ -657,7 +840,6 @@ export const OpenAIStream = async (
       };
 
       const parser = createParser(onParse);
-
       for await (const chunk of res.body as any) {
         parser.feed(decoder.decode(chunk));
       }
@@ -665,6 +847,11 @@ export const OpenAIStream = async (
   });
 
   return stream;
+};
+
+export const OpenAIProvider: Provider = {
+  id: 'openai',
+  streamTranslate,
 };
 ```
 
