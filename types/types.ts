@@ -1,11 +1,14 @@
-export type OpenAIModel = 'gpt-3.5-turbo' | 'gpt-4';
+// types/types.ts
+import type { ProviderId } from './provider';
+import type { ModelId } from './model';
 
 export interface TranslateBody {
   inputLanguage: string;
   outputLanguage: string;
   inputCode: string;
-  model: OpenAIModel;
-  apiKey: string;
+  model: ModelId;
+  provider: ProviderId;
+  apiKey: string; // you can keep one per provider or expand later
 }
 
 export interface TranslateResponse {

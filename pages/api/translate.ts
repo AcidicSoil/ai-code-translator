@@ -1,5 +1,6 @@
+// pages/api/translate.ts
 import { TranslateBody } from '@/types/types';
-import { OpenAIStream } from '@/utils';
+import { streamCodeTranslation } from '@/utils/providers';
 
 export const config = {
   runtime: 'edge',
@@ -7,16 +8,23 @@ export const config = {
 
 const handler = async (req: Request): Promise<Response> => {
   try {
-    const { inputLanguage, outputLanguage, inputCode, model, apiKey } =
-      (await req.json()) as TranslateBody;
-
-    const stream = await OpenAIStream(
+    const {
       inputLanguage,
       outputLanguage,
       inputCode,
       model,
+      provider,
       apiKey,
-    );
+    } = (await req.json()) as TranslateBody;
+
+    const stream = await streamCodeTranslation({
+      inputLanguage,
+      outputLanguage,
+      inputCode,
+      model,
+      provider,
+      apiKey,
+    });
 
     return new Response(stream);
   } catch (error) {

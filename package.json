@@ -10,14 +10,19 @@
     "code": "codefetch --include-dir pages,components,types,utils --exclude-files \"*.test.ts\", -o ai-code-translator.md"
   },
   "dependencies": {
+    "@ai-sdk/huggingface": "^0.0.11",
+    "@ai-sdk/openai-compatible": "^1.0.28",
     "@codemirror/legacy-modes": "^6.3.2",
     "@uiw/codemirror-theme-tokyo-night": "^4.19.11",
     "@uiw/react-codemirror": "^4.19.11",
+    "ai": "^5.0.106",
+    "ai-sdk-provider-gemini-cli": "^1.4.0",
     "endent": "^2.1.0",
     "eventsource-parser": "^1.0.0",
     "next": "13.2.4",
     "react": "18.2.0",
-    "react-dom": "18.2.0"
+    "react-dom": "18.2.0",
+    "zod": "^4.1.13"
   },
   "devDependencies": {
     "@types/node": "18.15.11",

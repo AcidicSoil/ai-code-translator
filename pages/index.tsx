@@ -3,24 +3,26 @@ import { CodeBlock } from '@/components/CodeBlock';
 import { LanguageSelect } from '@/components/LanguageSelect';
 import { ModelSelect } from '@/components/ModelSelect';
 import { TextBlock } from '@/components/TextBlock';
-import { OpenAIModel, TranslateBody } from '@/types/types';
+import { TranslateBody } from '@/types/types';
 import Head from 'next/head';
 import { useEffect, useState } from 'react';
+import { getModelConfig } from '@/types/model';
+import type { ModelId } from '@/types/model';
 
 export default function Home() {
   const [inputLanguage, setInputLanguage] = useState<string>('JavaScript');
   const [outputLanguage, setOutputLanguage] = useState<string>('Python');
   const [inputCode, setInputCode] = useState<string>('');
   const [outputCode, setOutputCode] = useState<string>('');
-  const [model, setModel] = useState<OpenAIModel>('gpt-3.5-turbo');
+  const [model, setModel] = useState<ModelId>('lmstudio-community/Meta-Llama-3-8B-Instruct-GGUF');
   const [loading, setLoading] = useState<boolean>(false);
   const [hasTranslated, setHasTranslated] = useState<boolean>(false);
   const [apiKey, setApiKey] = useState<string>('');
 
   const handleTranslate = async () => {
-    const maxCodeLength = model === 'gpt-3.5-turbo' ? 6000 : 12000;
+    const { provider, maxCodeLength } = getModelConfig(model);
 
-    if (!apiKey) {
+    if (!apiKey && provider !== 'lmstudio') {
       alert('Please enter an API key.');
       return;
     }
@@ -52,6 +54,7 @@ export default function Home() {
       outputLanguage,
       inputCode,
       model,
+      provider,
       apiKey,
     };
 
